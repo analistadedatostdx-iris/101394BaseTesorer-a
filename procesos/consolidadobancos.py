@@ -156,7 +156,7 @@ def run():
             .sum()
             .reset_index()
             .pivot_table(
-                index=["categoria", "concepto", "fecha"],  # 👈 ahora la fecha vive aquí
+                index=["categoria", "concepto", "fecha"],  
                 columns="archivo_origen",
                 values="Total",
                 fill_value=0
@@ -179,7 +179,7 @@ def run():
             st.download_button(
                 "Descargar Excel consolidado",
                 output,
-                "consolidado.xlsx",
+                "consolidadobancos.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
