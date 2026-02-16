@@ -163,9 +163,11 @@ def run():
             )
             .reset_index()
         )
-
+        
 
             pivot_df.columns.name = None
+            # Total General
+            pivot_df["Total"] = pivot_df.drop(columns=["categoria", "concepto", "fecha"]).sum(axis=1)
 
             st.success("Consolidado listo")
             st.dataframe(pivot_df)
