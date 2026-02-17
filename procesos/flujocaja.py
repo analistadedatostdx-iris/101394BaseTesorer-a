@@ -60,25 +60,13 @@ def run():
         st.subheader("Resumen por concepto")
         st.dataframe(resumen_df)
 
-        # ---------- Botones de descarga ----------
-        output_consolidado = io.BytesIO()
-        pivot_df.to_excel(output_consolidado, index=False)
-        output_consolidado.seek(0)
-
-        st.download_button(
-            "Descargar Excel consolidado",
-            output_consolidado,
-            "consolidado.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
         output_resumen = io.BytesIO()
         resumen_df.to_excel(output_resumen, index=False)
         output_resumen.seek(0)
 
         st.download_button(
-            "Descargar Excel resumen por concepto",
+            "Descargar Flujo de Caja",
             output_resumen,
-            "flujocaja",
+            "flujocaja.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
