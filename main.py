@@ -5,7 +5,7 @@ st.sidebar.title("📊 Procesos")
 
 opcion = st.sidebar.selectbox(
     "¿Qué proceso quieres usar?",
-    ["Flujo de caja", "Consolidado bancos", "Seguimiento Diario"]
+    ["Consolidado bancos", "Seguimiento Diario", "Flujo de caja"]
 )
 
 if opcion == "Flujo de caja":
