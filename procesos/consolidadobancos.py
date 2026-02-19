@@ -61,10 +61,7 @@ def run():
         return pd.read_excel(file, header=header_row)
 
     # ---------- Mapeo ----------
-    COLUMN_MA
-    
-    
-    P = {
+    COLUMN_MAP = {
         "categoria": ["categoria"],
         "concepto": ["concepto"],
         "valor": ["vlr", "valor"],
