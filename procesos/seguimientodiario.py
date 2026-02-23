@@ -1,4 +1,5 @@
 import streamlit as st
+import zipfile
 import io
 import pandas as pd
 import re
@@ -36,95 +37,162 @@ def run():
             .fillna(0)
         )
 
+    # ---------- Detectar header ----------
+    def is_header_row(row):
+        text_cells = [
+            str(x).strip() for x in row
+            if isinstance(x, str) and len(str(x).strip()) > 0
+        ]
+        short_texts = [t for t in text_cells if len(t) < 30]
+        return len(short_texts) >= 4
+
+    def read_real_excel(file):
+        df_raw = pd.read_excel(file, header=None)
+
+        header_row = None
+        for i, row in df_raw.iterrows():
+            if is_header_row(row):
+                header_row = i
+                break
+
+        if header_row is None:
+            header_row = 0
+
+        return pd.read_excel(file, header=header_row), header_row
+
     # ---------- Mapeo ----------
     COLUMN_MAP = {
         "categoria": ["categoria"],
         "concepto": ["concepto"],
-        "valor": ["vlr", "valor", "total"],
-        "fecha": ["fecha", "date"],
-        "banco": ["archivo_origen", "banco", "cuenta"]
+        "valor": [
+            "vlr flujo",
+            "valor dc",
+            "valor d/c",
+            "vlr",
+            "valor",
+            "valor de la compra",
+        ],
+        "fecha": ["fecha", "date", "fecha movimiento", "fecha valor", "fecha transaccion"],
     }
 
     # ---------- Estandarizar ----------
-    def standardize_df(df):
+    def standardize_df(df, filename):
         cols = df.columns.tolist()
         n = len(df)
 
         categoria_col = find_column(cols, COLUMN_MAP["categoria"])
-        concepto_col = find_column(cols, COLUMN_MAP["concepto"])
-        valor_col = find_column(cols, COLUMN_MAP["valor"])
-        fecha_col = find_column(cols, COLUMN_MAP["fecha"])
-        banco_col = find_column(cols, COLUMN_MAP["banco"])
+        concepto_col  = find_column(cols, COLUMN_MAP["concepto"])
+        valor_col     = find_column(cols, COLUMN_MAP["valor"])
+        fecha_col     = find_column(cols, COLUMN_MAP["fecha"])
 
         categoria = df[categoria_col] if categoria_col else pd.Series([None] * n)
-        concepto = df[concepto_col] if concepto_col else pd.Series([None] * n)
-        banco = df[banco_col] if banco_col else pd.Series(["Banco"] * n)
-
-        total = clean_money(df[valor_col]) if valor_col else pd.Series([0] * n)
+        concepto  = df[concepto_col]  if concepto_col  else pd.Series([None] * n)
+        total     = clean_money(df[valor_col]) if valor_col else pd.Series([0] * n)
 
         if fecha_col:
-            fecha = (
-                pd.to_datetime(df[fecha_col], errors="coerce")
-                .dt.normalize()
-            )
+            parsed = pd.to_datetime(df[fecha_col], errors="coerce", utc=True)
+            fecha  = parsed.dt.tz_convert(None).dt.normalize()
         else:
             fecha = pd.Series([pd.NaT] * n)
 
         return pd.DataFrame({
-            "categoria": categoria,
-            "concepto": concepto,
-            "banco": banco,
-            "fecha": fecha,
-            "Total": total
+            "categoria":      categoria.values,
+            "concepto":       concepto.values,
+            "banco":          filename,       # el nombre del archivo = banco
+            "fecha":          fecha.values,
+            "Total":          total.values,
         })
 
-    # ---------- Upload Excel ----------
-    file = st.file_uploader("Suba el Excel consolidado", type=["xlsx", "xls"])
+    # ---------- Selector de mes ----------
+    mes_seleccionado = st.selectbox(
+        "Selecciona el mes a analizar",
+        list(range(1, 13)),
+        format_func=lambda x: pd.to_datetime(f"2024-{x}-01").strftime("%B")
+    )
 
-    if file is not None:
-        try:
-            df_raw = pd.read_excel(file)
-            df = standardize_df(df_raw)
+    # ---------- ZIP ----------
+    zip_file = st.file_uploader("Suba el ZIP con los Excel", type="zip")
 
-            df = df.dropna(subset=["fecha"])
+    if zip_file is not None:
+        all_data = []
+        report   = []
 
-            # ---------- RESUMEN DIARIO POR BANCO ----------
-            pivot_df = (
-                df
-                .groupby(["fecha", "banco"])["Total"]
-                .sum()
-                .unstack(fill_value=0)
-                .reset_index()
-            )
+        with zipfile.ZipFile(io.BytesIO(zip_file.read())) as z:
+            excel_files = [f for f in z.namelist() if f.endswith(".xlsx")]
+            st.write("Archivos encontrados:", excel_files)
 
-            # ---------- TOTAL DIARIO ----------
-            columnas_bancos = pivot_df.columns.drop("fecha")
-            pivot_df["Total diario"] = pivot_df[columnas_bancos].sum(axis=1)
+            for file in excel_files:
+                with z.open(file) as f:
+                    try:
+                        df, header_row = read_real_excel(f)
+                        clean_df = standardize_df(df, file)
 
-            # ordenar
-            pivot_df = pivot_df.sort_values("fecha")
+                        with st.expander(f"🔍 Debug: {file}"):
+                            st.write("**Header detectado en fila:**", header_row)
+                            st.write("**Columnas detectadas:**", df.columns.tolist())
+                            st.write("**Col. valor encontrada:**", find_column(df.columns.tolist(), COLUMN_MAP["valor"]))
+                            st.write("**Col. fecha encontrada:**", find_column(df.columns.tolist(), COLUMN_MAP["fecha"]))
+                            st.dataframe(df.head(5))
 
-            # ---------- TOTAL ACUMULADO MES ----------
-            pivot_df["Total acumulado mes"] = (
-                pivot_df
-                .groupby(pivot_df["fecha"].dt.to_period("M"))["Total diario"]
-                .cumsum()
-            )
+                        report.append({
+                            "archivo":          file,
+                            "filas_originales": len(df),
+                            "filas_utiles":     len(clean_df),
+                        })
 
-            st.success("Resumen diario por banco listo")
-            st.dataframe(pivot_df)
+                        all_data.append(clean_df)
 
-            # descargar
-            output = io.BytesIO()
-            pivot_df.to_excel(output, index=False)
-            output.seek(0)
+                    except Exception as e:
+                        report.append({"archivo": file, "error": str(e)})
+                        st.exception(e)
 
-            st.download_button(
-                "Descargar Excel",
-                output,
-                "flujo_diario_bancos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+        st.subheader("Reporte de lectura por archivo")
+        st.dataframe(pd.DataFrame(report))
 
-        except Exception as e:
-            st.error(f"Error leyendo el archivo: {e}")
+        if all_data:
+            final_df = pd.concat(all_data, ignore_index=True)
+
+            # ---------- FILTRAR POR MES ----------
+            final_df = final_df.dropna(subset=["fecha"])
+            final_df = final_df[final_df["fecha"].dt.month == mes_seleccionado]
+
+            if final_df.empty:
+                st.warning("No hay datos para el mes seleccionado. Revisa el debug de fechas arriba.")
+            else:
+                # ---------- RESUMEN DIARIO POR BANCO ----------
+                pivot_df = (
+                    final_df
+                    .groupby(["fecha", "banco"])["Total"]
+                    .sum()
+                    .unstack(fill_value=0)
+                    .reset_index()
+                )
+
+                # ---------- TOTAL DIARIO ----------
+                columnas_bancos = pivot_df.columns.drop("fecha")
+                pivot_df["Total diario"] = pivot_df[columnas_bancos].sum(axis=1)
+
+                # ---------- ORDENAR ----------
+                pivot_df = pivot_df.sort_values("fecha").reset_index(drop=True)
+
+                # ---------- TOTAL ACUMULADO MES ----------
+                pivot_df["Total acumulado mes"] = pivot_df["Total diario"].cumsum()
+
+                pivot_df.columns.name = None
+
+                st.success("Resumen diario por banco listo")
+                st.dataframe(pivot_df)
+
+                # ---------- DESCARGAR ----------
+                output = io.BytesIO()
+                pivot_df.to_excel(output, index=False)
+                output.seek(0)
+
+                st.download_button(
+                    "Descargar Excel",
+                    output,
+                    "flujo_diario_bancos.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+        else:
+            st.error("Ningún archivo aportó datos útiles.")
