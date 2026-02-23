@@ -62,11 +62,16 @@ def run():
 
     # ---------- Mapeo ----------
     COLUMN_MAP = {
-        "categoria": ["categoria"],
-        "concepto": ["concepto"],
-        "valor": ["vlr", "valor"],
-        "fecha": ["fecha", "date"]
-    }
+    "categoria": ["categoria"],
+    "concepto": ["concepto"],
+    "valor": [
+        "vlr flujo",
+        "valor dc",
+        "valor d/c",
+        "vlr",
+        "valor"
+    ],
+    "fecha": ["fecha", "date"]}
 
     # ---------- Estandarizar ----------
     def standardize_df(df, filename):
@@ -150,13 +155,13 @@ def run():
             pivot_df = (
             final_df
             .groupby(
-                ["categoria", "concepto", "fecha", "archivo_origen"],
+                ["categoria", "concepto", "archivo_origen"],
                 dropna=False
             )["Total"]
             .sum()
             .reset_index()
             .pivot_table(
-                index=["categoria", "concepto", "fecha"],  
+                index=["categoria", "concepto"],  
                 columns="archivo_origen",
                 values="Total",
                 fill_value=0
@@ -167,7 +172,7 @@ def run():
 
             pivot_df.columns.name = None
             # Total General
-            pivot_df["Total"] = pivot_df.drop(columns=["categoria", "concepto", "fecha"]).sum(axis=1)
+            pivot_df["Total"] = pivot_df.drop(columns=["categoria", "concepto"]).sum(axis=1)
 
             st.success("Consolidado listo")
             st.dataframe(pivot_df)
