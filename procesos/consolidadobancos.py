@@ -58,20 +58,21 @@ def run():
         if header_row is None:
             header_row = 0
 
-        return pd.read_excel(file, header=header_row)
+        return pd.read_excel(file, header=header_row), header_row
 
     # ---------- Mapeo ----------
     COLUMN_MAP = {
-    "categoria": ["categoria"],
-    "concepto": ["concepto"],
-    "valor": [
-        "vlr flujo",
-        "valor dc",
-        "valor d/c",
-        "vlr",
-        "valor"
-    ],
-    "fecha": ["fecha", "date"]}
+        "categoria": ["categoria"],
+        "concepto": ["concepto"],
+        "valor": [
+            "vlr flujo",
+            "valor dc",
+            "valor d/c",
+            "vlr",
+            "valor",
+            "valor de la compra"
+        ],
+    }
 
     # ---------- Estandarizar ----------
     def standardize_df(df, filename):
@@ -79,44 +80,26 @@ def run():
         n = len(df)
 
         categoria_col = find_column(cols, COLUMN_MAP["categoria"])
-        concepto_col = find_column(cols, COLUMN_MAP["concepto"])
-        valor_col = find_column(cols, COLUMN_MAP["valor"])
-        fecha_col = find_column(cols, COLUMN_MAP["fecha"])
+        concepto_col  = find_column(cols, COLUMN_MAP["concepto"])
+        valor_col     = find_column(cols, COLUMN_MAP["valor"])
 
-        categoria = df[categoria_col] if categoria_col else pd.Series([None]*n)
-        concepto = df[concepto_col] if concepto_col else pd.Series([None]*n)
-
-        total = clean_money(df[valor_col]) if valor_col else pd.Series([0]*n)
-
-        if fecha_col:
-            fecha = (
-                pd.to_datetime(df[fecha_col], errors="coerce", utc=True)
-                .dt.tz_localize(None)
-            )
-        else:
-            fecha = pd.Series([pd.NaT]*n)
+        categoria = df[categoria_col] if categoria_col else pd.Series([None] * n)
+        concepto  = df[concepto_col]  if concepto_col  else pd.Series([None] * n)
+        total     = clean_money(df[valor_col]) if valor_col else pd.Series([0] * n)
 
         return pd.DataFrame({
-            "categoria": categoria,
-            "concepto": concepto,
+            "categoria":      categoria.values,
+            "concepto":       concepto.values,
             "archivo_origen": filename,
-            "fecha": fecha,
-            "Total": total
+            "Total":          total.values,
         })
-
-    # ---------- Selector de mes ----------
-    mes_seleccionado = st.selectbox(
-        "Selecciona el mes a analizar",
-        list(range(1, 13)),
-        format_func=lambda x: pd.to_datetime(f"2024-{x}-01").strftime("%B")
-    )
 
     # ---------- ZIP ----------
     zip_file = st.file_uploader("Suba el ZIP con los Excel", type="zip")
 
     if zip_file is not None:
         all_data = []
-        report = []
+        report   = []
 
         with zipfile.ZipFile(io.BytesIO(zip_file.read())) as z:
             excel_files = [f for f in z.namelist() if f.endswith(".xlsx")]
@@ -125,22 +108,28 @@ def run():
             for file in excel_files:
                 with z.open(file) as f:
                     try:
-                        df = read_real_excel(f)
+                        df, header_row = read_real_excel(f)
                         clean_df = standardize_df(df, file)
 
+                        with st.expander(f"🔍 Debug: {file}"):
+                            st.write("**Header detectado en fila:**", header_row)
+                            st.write("**Columnas detectadas:**", df.columns.tolist())
+                            st.write("**Col. valor encontrada:**",    find_column(df.columns.tolist(), COLUMN_MAP["valor"]))
+                            st.write("**Col. concepto encontrada:**", find_column(df.columns.tolist(), COLUMN_MAP["concepto"]))
+                            st.write("**Col. categoría encontrada:**",find_column(df.columns.tolist(), COLUMN_MAP["categoria"]))
+                            st.dataframe(df.head(5))
+
                         report.append({
-                            "archivo": file,
+                            "archivo":         file,
                             "filas_originales": len(df),
-                            "filas_utiles": len(clean_df)
+                            "filas_utiles":     len(clean_df),
                         })
 
                         all_data.append(clean_df)
 
                     except Exception as e:
-                        report.append({
-                            "archivo": file,
-                            "error": str(e)
-                        })
+                        report.append({"archivo": file, "error": str(e)})
+                        st.exception(e)
 
         st.subheader("Reporte de lectura por archivo")
         st.dataframe(pd.DataFrame(report))
@@ -148,30 +137,22 @@ def run():
         if all_data:
             final_df = pd.concat(all_data, ignore_index=True)
 
-            # ---------- FILTRAR POR MES ----------
-            final_df = final_df[final_df["fecha"].dt.month == mes_seleccionado]
-
             # ---------- PIVOT ----------
             pivot_df = (
-            final_df
-            .groupby(
-                ["categoria", "concepto", "archivo_origen"],
-                dropna=False
-            )["Total"]
-            .sum()
-            .reset_index()
-            .pivot_table(
-                index=["categoria", "concepto"],  
-                columns="archivo_origen",
-                values="Total",
-                fill_value=0
+                final_df
+                .groupby(["categoria", "concepto", "archivo_origen"], dropna=False)["Total"]
+                .sum()
+                .reset_index()
+                .pivot_table(
+                    index=["categoria", "concepto"],
+                    columns="archivo_origen",
+                    values="Total",
+                    fill_value=0,
+                )
+                .reset_index()
             )
-            .reset_index()
-        )
-        
 
             pivot_df.columns.name = None
-            # Total General
             pivot_df["Total"] = pivot_df.drop(columns=["categoria", "concepto"]).sum(axis=1)
 
             st.success("Consolidado listo")
@@ -185,7 +166,7 @@ def run():
                 "Descargar Excel consolidado",
                 output,
                 "consolidadobancos.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         else:
             st.error("Ningún archivo aportó datos útiles.")
