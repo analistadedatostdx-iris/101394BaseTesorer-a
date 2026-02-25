@@ -7,7 +7,7 @@ import unicodedata
 
 
 def run():
-    st.title("Flujo de caja")
+    st.title("Consolidado Bancos")
 
     # ---------- Normalizar ----------
     def normalize(text):

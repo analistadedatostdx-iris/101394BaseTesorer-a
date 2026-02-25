@@ -9,7 +9,7 @@ opcion = st.sidebar.selectbox(
 )
 
 if opcion == "Consolidado bancos":
-    consolidadobancos()
+    consolidadobancos.run()
 
 elif opcion == "Seguimiento Diario":
     seguimientodiario.run()
