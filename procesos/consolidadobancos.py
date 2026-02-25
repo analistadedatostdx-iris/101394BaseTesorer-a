@@ -110,15 +110,14 @@ def run():
                     try:
                         df, header_row = read_real_excel(f)
                         clean_df = standardize_df(df, file)
-
-                        with st.expander(f"🔍 Debug: {file}"):
-                            st.write("**Header detectado en fila:**", header_row)
-                            st.write("**Columnas detectadas:**", df.columns.tolist())
-                            st.write("**Col. valor encontrada:**",    find_column(df.columns.tolist(), COLUMN_MAP["valor"]))
-                            st.write("**Col. concepto encontrada:**", find_column(df.columns.tolist(), COLUMN_MAP["concepto"]))
-                            st.write("**Col. categoría encontrada:**",find_column(df.columns.tolist(), COLUMN_MAP["categoria"]))
-                            st.dataframe(df.head(5))
-
+                        #Debug 
+                        #with st.expander(f"🔍 Debug: {file}"):
+                            #st.write("**Header detectado en fila:**", header_row)
+                            #st.write("**Columnas detectadas:**", df.columns.tolist())
+                            #st.write("**Col. valor encontrada:**",    find_column(df.columns.tolist(), COLUMN_MAP["valor"]))
+                            #st.write("**Col. concepto encontrada:**", find_column(df.columns.tolist(), COLUMN_MAP["concepto"]))
+                           # st.write("**Col. categoría encontrada:**",find_column(df.columns.tolist(), COLUMN_MAP["categoria"]))
+                          #  st.dataframe(df.head(5))       
                         report.append({
                             "archivo":         file,
                             "filas_originales": len(df),
